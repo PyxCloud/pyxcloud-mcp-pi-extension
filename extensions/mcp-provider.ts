@@ -395,31 +395,22 @@ export default function (pi: ExtensionAPI) {
   // ── /passo-login command ────────────────────────────────────────────
 
   pi.registerCommand("passo-login", {
-    description: "Login to the PyxCloud Passobuild MCP (OAuth 2.1 + PKCE)",
-    parameters: Type.Object({
-      env: Type.Optional(Type.String({
-        description: 'Environment: "staging" (default) or "prod"',
-      })),
-    }),
-    execute: async (params, ctx) => {
-      const resolvedConfig = params?.env
-        ? getConfig(agentDir) // will re-read from env; if not overridden, use default
-        : config;
-
-      // Override env if specified
-      let activeConfig = resolvedConfig;
-      if (params?.env) {
-        const e = (params.env as string) === "prod" ? "prod" : "staging";
-        activeConfig = getConfig(agentDir);
-        // Override with explicit env
-        if (e === "prod") {
-          activeConfig = {
-            ...activeConfig,
-            env: "prod",
-            mcpUrl: "https://mcp.passo.build/mcp",
-            authIssuer: "https://auth.pyxcloud.io/realms/passobuild",
-          };
-        }
+    description: "Login to the PyxCloud Passobuild MCP (OAuth 2.1 + PKCE). Optional arg: 'staging' (default) or 'prod'",
+    getArgumentCompletions: (_prefix) => {
+      return [{ value: "prod", label: "Production" }, { value: "staging", label: "Staging" }];
+    },
+    handler: async (args, ctx) => {
+      // Parse args: "prod" or "staging" (default)
+      const envArg = (args || "").trim().toLowerCase();
+      const targetEnv = envArg === "prod" ? "prod" : "staging";
+      let activeConfig = getConfig(agentDir);
+      if (targetEnv === "prod") {
+        activeConfig = {
+          ...activeConfig,
+          env: "prod",
+          mcpUrl: "https://mcp.passo.build/mcp",
+          authIssuer: "https://auth.pyxcloud.io/realms/passobuild",
+        };
       }
 
       ctx.ui.notify(`Starting MCP login (${activeConfig.env})...`, "info");
@@ -493,8 +484,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("passo-status", {
     description: "Show MCP connection status",
-    parameters: Type.Object({}),
-    execute: async (_params, ctx) => {
+    handler: async (_args, ctx) => {
       const status = tm.getStatus();
       ctx.ui.notify(`MCP (${config.env}): ${status}`, "info");
     },
@@ -504,8 +494,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("passo-logout", {
     description: "Clear MCP authentication and disconnect",
-    parameters: Type.Object({}),
-    execute: async (_params, ctx) => {
+    handler: async (_args, ctx) => {
       tm.clear();
       ctx.ui.notify("MCP disconnected and token cleared", "info");
     },
