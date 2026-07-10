@@ -450,17 +450,35 @@ export default function (pi: ExtensionAPI) {
         const code = await cb.promise;
 
         // Exchange code for tokens
-        const tokenRes = await fetch(`${activeConfig.authIssuer}/protocol/openid-connect/token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "authorization_code",
-            client_id: activeConfig.clientId,
-            code,
-            redirect_uri: redirectUri,
-            code_verifier: verifier,
-          }),
-        });
+        const tokenUrl = `${activeConfig.authIssuer}/protocol/openid-connect/token`;
+        const tokenBody = `grant_type=authorization_code`
+          + `&client_id=${encodeURIComponent(activeConfig.clientId)}`
+          + `&code=${encodeURIComponent(code)}`
+          + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+          + `&code_verifier=${encodeURIComponent(verifier)}`;
+
+        console.log(`[pyxcloud-mcp] Exchanging code for token at ${tokenUrl}...`);
+
+        let tokenRes: Response;
+        try {
+          tokenRes = await fetch(tokenUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: tokenBody,
+          });
+        } catch (fetchErr: any) {
+          // DNS / connectivity failure — show hostname resolution for debugging
+          const hostname = new URL(tokenUrl).hostname;
+          let dnsInfo = hostname;
+          try {
+            const { Resolver } = await import("node:dns/promises");
+            const resolver = new Resolver();
+            // Try system DNS first, then Cloudflare DNS
+            const sysAddrs = await resolver.resolve4(hostname);
+            dnsInfo = `${hostname} → [${sysAddrs.join(", ")}]`;
+          } catch {}
+          throw new Error(`Token exchange connection failed: ${fetchErr.message}. DNS: ${dnsInfo}. If you have Tailscale/MagicDNS, try disabling it or running: nslookup ${hostname} 1.1.1.1`);
+        }
 
         if (!tokenRes.ok) {
           const errBody = await tokenRes.text();
