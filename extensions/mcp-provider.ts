@@ -200,42 +200,49 @@ function createTokenManager(config: McpConfig) {
 }
 
 // ── Local callback server ──────────────────────────────────────────────
-
-function startCallbackServer(): Promise<{ code: string; port: number }> {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => {
-      try {
-        const url = new URL(req.url || "/", `http://localhost`);
-        if (url.pathname === "/callback" && url.searchParams.has("code")) {
-          const code = url.searchParams.get("code")!;
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.end(`<!DOCTYPE html>
-<html><body style="font-family: sans-serif; text-align: center; margin-top: 80px;">
-<h1>✅ MCP Authenticated</h1>
-<p>You can close this tab and return to pi.</p>
-</body></html>`);
-          server.close();
-          resolve({ code, port: (server.address() as any).port });
-        } else {
-          res.writeHead(404);
-          res.end("Not found");
-        }
-      } catch {
-        res.writeHead(500);
-        res.end("Error");
-      }
-    });
-    server.listen(0, "127.0.0.1", () => {
-      const port = (server.address() as any).port;
-      console.log(`[pyxcloud-mcp] Callback server listening on port ${port}`);
-    });
-    server.on("error", reject);
-    // Timeout after 5 minutes
-    setTimeout(() => {
-      server.close();
-      reject(new Error("Login timed out after 5 minutes"));
-    }, 300_000);
+// Starts listening immediately and returns { port, promise } so the caller
+// can build and show the auth URL BEFORE awaiting the callback promise.
+async function startCallbackServer(): Promise<{ port: number; promise: Promise<string>; close: () => void }> {
+  let resolveCode: (code: string) => void = () => {};
+  let rejectCode: (err: Error) => void = () => {};
+  const promise = new Promise<string>((resolve, reject) => {
+    resolveCode = resolve;
+    rejectCode = reject;
   });
+
+  const server = http.createServer((req, res) => {
+    try {
+      const url = new URL(req.url || "/", `http://localhost`);
+      if (url.pathname === "/callback" && url.searchParams.has("code")) {
+        const code = url.searchParams.get("code")!;
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end(`<!DOCTYPE html>\n<html><body style="font-family: sans-serif; text-align: center; margin-top: 80px;">\n<h1>✅ MCP Authenticated</h1>\n<p>You can close this tab and return to pi.</p>\n</body></html>`);
+        server.close(() => resolveCode(code));
+      } else {
+        res.writeHead(404);
+        res.end("Not found");
+      }
+    } catch { res.writeHead(500); res.end("Error"); }
+  });
+
+  server.on("error", (err) => { rejectCode(err); });
+
+  // Start listening and wait for the port to be assigned
+  server.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const port = (server.address() as any)?.port || 0;
+
+  // Timeout after 5 minutes
+  const timeout = setTimeout(() => {
+    server.close();
+    rejectCode(new Error("Login timed out after 5 minutes"));
+  }, 300_000);
+
+  return {
+    port,
+    promise: promise.finally(() => { clearTimeout(timeout); }),
+    close: () => server.close(),
+  };
 }
 
 // ── Tool registration ──────────────────────────────────────────────────
@@ -421,10 +428,11 @@ export default function (pi: ExtensionAPI) {
 
       try {
         // Start local callback server on the user's machine
-        const { code, port } = await startCallbackServer();
+        const cb = await startCallbackServer();
+        const port = cb.port;
         const redirectUri = `http://localhost:${port}/callback`;
 
-        // Build auth URL
+        // Build auth URL (MUST be before awaiting the callback!)
         const authUrl = `${activeConfig.authIssuer}/protocol/openid-connect/auth`
           + `?client_id=${encodeURIComponent(activeConfig.clientId)}`
           + `&response_type=code`
@@ -434,9 +442,12 @@ export default function (pi: ExtensionAPI) {
           + `&code_challenge_method=S256`
           + `&state=${encodeURIComponent(state)}`;
 
-        // Notify the user with the auth URL
-        ctx.ui.notify(`MCP login: open browser to authenticate (port ${port})`, "info");
-        console.log(`\n[pyxcloud-mcp] Open this URL in your browser to log in:\n${authUrl}\n`);
+        // Show the URL to the user BEFORE waiting
+        ctx.ui.notify(`Open browser to authenticate (port ${port})`, "info");
+        console.log(`\n[pyxcloud-mcp] Open this URL in your browser:\n${authUrl}\n`);
+
+        // NOW wait for the callback
+        const code = await cb.promise;
 
         // Exchange code for tokens
         const tokenRes = await fetch(`${activeConfig.authIssuer}/protocol/openid-connect/token`, {
