@@ -215,7 +215,7 @@ async function startCallbackServer(): Promise<{ port: number; promise: Promise<s
       const url = new URL(req.url || "/", `http://localhost`);
       if (url.pathname === "/callback" && url.searchParams.has("code")) {
         const code = url.searchParams.get("code")!;
-        res.writeHead(200, { "Content-Type": "text/html" });
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(`<!DOCTYPE html>\n<html><body style="font-family: sans-serif; text-align: center; margin-top: 80px;">\n<h1>✅ MCP Authenticated</h1>\n<p>You can close this tab and return to pi.</p>\n</body></html>`);
         server.close(() => resolveCode(code));
       } else {
@@ -450,42 +450,59 @@ export default function (pi: ExtensionAPI) {
         const code = await cb.promise;
 
         // Exchange code for tokens
-        const tokenUrl = `${activeConfig.authIssuer}/protocol/openid-connect/token`;
+        // Use a custom HTTPS request with explicit DNS resolution via Cloudflare
+        // DNS (1.1.1.1) to bypass Tailscale MagicDNS returning private IPs.
+        const tokenUrl = new URL(`${activeConfig.authIssuer}/protocol/openid-connect/token`);
         const tokenBody = `grant_type=authorization_code`
           + `&client_id=${encodeURIComponent(activeConfig.clientId)}`
           + `&code=${encodeURIComponent(code)}`
           + `&redirect_uri=${encodeURIComponent(redirectUri)}`
           + `&code_verifier=${encodeURIComponent(verifier)}`;
 
-        console.log(`[pyxcloud-mcp] Exchanging code for token at ${tokenUrl}...`);
+        console.log(`[pyxcloud-mcp] Exchanging code for token at ${tokenUrl.hostname}...`);
 
-        let tokenRes: Response;
-        try {
-          tokenRes = await fetch(tokenUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: tokenBody,
-          });
-        } catch (fetchErr: any) {
-          // DNS / connectivity failure — show hostname resolution for debugging
-          const hostname = new URL(tokenUrl).hostname;
-          let dnsInfo = hostname;
-          try {
-            const { Resolver } = await import("node:dns/promises");
-            const resolver = new Resolver();
-            // Try system DNS first, then Cloudflare DNS
-            const sysAddrs = await resolver.resolve4(hostname);
-            dnsInfo = `${hostname} → [${sysAddrs.join(", ")}]`;
-          } catch {}
-          throw new Error(`Token exchange connection failed: ${fetchErr.message}. DNS: ${dnsInfo}. If you have Tailscale/MagicDNS, try disabling it or running: nslookup ${hostname} 1.1.1.1`);
+        // Resolve hostname via Cloudflare DNS to bypass Tailscale MagicDNS
+        const { Resolver } = await import("node:dns/promises");
+        const cfResolver = new Resolver();
+        cfResolver.setServers(["1.1.1.1", "1.0.0.1"]);
+        const [publicIp] = await cfResolver.resolve4(tokenUrl.hostname);
+        console.log(`[pyxcloud-mcp] Resolved ${tokenUrl.hostname} → ${publicIp} (via 1.1.1.1)`);
+
+        // Use https.request with explicit IP + Host header
+        const https = await import("node:https");
+        const tokenRes = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+          const req = https.request(
+            {
+              hostname: publicIp,
+              port: 443,
+              path: tokenUrl.pathname + tokenUrl.search,
+              method: "POST",
+              headers: {
+                "Host": tokenUrl.hostname,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Content-Length": Buffer.byteLength(tokenBody),
+                "User-Agent": "pyxcloud-mcp-pi/0.1.0",
+              },
+              rejectUnauthorized: false, // self-signed origin cert behind Cloudflare
+            },
+            (res) => {
+              const chunks: Buffer[] = [];
+              res.on("data", (c: Buffer) => chunks.push(c));
+              res.on("end", () => {
+                resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString() });
+              });
+            },
+          );
+          req.on("error", reject);
+          req.write(tokenBody);
+          req.end();
+        });
+
+        if (tokenRes.status !== 200) {
+          throw new Error(`Token exchange failed (${tokenRes.status}): ${tokenRes.body}`);
         }
 
-        if (!tokenRes.ok) {
-          const errBody = await tokenRes.text();
-          throw new Error(`Token exchange failed (${tokenRes.status}): ${errBody}`);
-        }
-
-        const tokens = await tokenRes.json();
+        const tokens = JSON.parse(tokenRes.body);
         tm.setToken({
           access_token: tokens.access_token,
           refresh_token: tokens.refresh_token || "",
