@@ -1,0 +1,17 @@
+{
+  "name": "pyxcloud-mcp",
+  "version": "0.1.0",
+  "description": "Pi extension for PyxCloud Passobuild MCP — OAuth 2.1 + PKCE, automatic tool discovery, token management",
+  "keywords": ["pi-package", "pi-extension", "mcp", "pyxcloud", "passobuild"],
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "typebox": "*"
+  }
+}
