@@ -14,8 +14,8 @@
  *   pi -e ./pyxcloud-mcp-pi-extension
  *
  * Commands:
- *   /mcp-login       - Authenticate with the passobuild MCP
- *   /mcp-status      - Show connection status
+ *   /passo-login     - Authenticate with the passobuild MCP
+ *   /passo-status    - Show connection status
  *
  * Env vars:
  *   PYXCLOUD_MCP_ENV     "staging" (default) or "prod"
@@ -173,7 +173,7 @@ function createTokenManager(config: McpConfig) {
     },
 
     async getValidToken(): Promise<string> {
-      if (!token) throw new Error("Not authenticated — run /mcp-login");
+      if (!token) throw new Error("Not authenticated — run /passo-login");
       if (Date.now() >= token.expires_at - 60_000) {
         try {
           token = await refreshAccessToken(config, token);
@@ -181,7 +181,7 @@ function createTokenManager(config: McpConfig) {
         } catch {
           clearToken(config);
           token = null;
-          throw new Error("Token expired and refresh failed — run /mcp-login");
+          throw new Error("Token expired and refresh failed — run /passo-login");
         }
       }
       return token.access_token;
@@ -392,9 +392,9 @@ export default function (pi: ExtensionAPI) {
   const config = getConfig(agentDir);
   const tm = createTokenManager(config);
 
-  // ── /mcp-login command ──────────────────────────────────────────────
+  // ── /passo-login command ────────────────────────────────────────────
 
-  pi.registerCommand("mcp-login", {
+  pi.registerCommand("passo-login", {
     description: "Login to the PyxCloud Passobuild MCP (OAuth 2.1 + PKCE)",
     parameters: Type.Object({
       env: Type.Optional(Type.String({
@@ -489,9 +489,9 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── /mcp-status command ────────────────────────────────────────────
+  // ── /passo-status command ──────────────────────────────────────────
 
-  pi.registerCommand("mcp-status", {
+  pi.registerCommand("passo-status", {
     description: "Show MCP connection status",
     parameters: Type.Object({}),
     execute: async (_params, ctx) => {
@@ -500,9 +500,9 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── /mcp-logout command ────────────────────────────────────────────
+  // ── /passo-logout command ──────────────────────────────────────────
 
-  pi.registerCommand("mcp-logout", {
+  pi.registerCommand("passo-logout", {
     description: "Clear MCP authentication and disconnect",
     parameters: Type.Object({}),
     execute: async (_params, ctx) => {

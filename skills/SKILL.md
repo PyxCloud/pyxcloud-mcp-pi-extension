@@ -4,7 +4,7 @@ This skill enables the coding agent to interact with the passobuild board MCP â€
 
 ## Prerequisites
 
-The user must authenticate first via `/mcp-login` (OAuth 2.1 + PKCE with GitHub SSO).
+The user must authenticate first via `/passo-login` (OAuth 2.1 + PKCE with GitHub SSO).
 
 ## Available Tools
 

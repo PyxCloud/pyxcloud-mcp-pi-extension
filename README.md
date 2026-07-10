@@ -8,7 +8,7 @@ A [pi](https://pi.dev) extension for the passobuild board MCP — task orchestra
 - **Automatic callback capture** — Local server catches the OAuth redirect
 - **Tool discovery** — Automatically registers all MCP tools as pi tools
 - **Token management** — Auto-refresh, persistence, `offline_access` support
-- **Commands** — `/mcp-login`, `/mcp-status`, `/mcp-logout`
+- **Commands** — `/passo-login`, `/passo-status`, `/passo-logout`
 
 ## Install
 
@@ -27,21 +27,21 @@ pi -e /path/to/pyxcloud-mcp-pi-extension
 ### 1. Authenticate
 
 ```
-/mcp-login
+/passo-login
 ```
 
-This opens your browser to the passobuild OAuth login page. Log in with GitHub SSO. The browser redirects to a local callback server that captures the code automatically — no manual copying.
+This opens the passobuild OAuth login page. Log in with GitHub SSO. The browser redirects to a local callback server that captures the code automatically — no manual copying.
 
 To authenticate against production instead of staging:
 
 ```
-/mcp-login {"env": "prod"}
+/passo-login {"env": "prod"}
 ```
 
 ### 2. Check Status
 
 ```
-/mcp-status
+/passo-status
 ```
 
 ### 3. Use the Tools
@@ -57,7 +57,7 @@ Once authenticated, the coding agent can use all passobuild board tools:
 ### 4. Logout
 
 ```
-/mcp-logout
+/passo-logout
 ```
 
 ## Environment Variables
@@ -75,7 +75,7 @@ Tokens are stored in `~/.pyxcloud-mcp-token.json` with `offline_access` scope fo
 
 ## How It Works
 
-1. `/mcp-login` starts a local HTTP server on a random port
+1. `/passo-login` starts a local HTTP server on a random port
 2. Generates PKCE challenge + state
 3. Opens the OAuth authorize URL with `redirect_uri=http://localhost:{port}/callback`
 4. After the user logs in, the OAuth provider redirects the browser to the local server
