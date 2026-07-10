@@ -394,8 +394,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── /mcp-login command ──────────────────────────────────────────────
 
-  pi.registerCommand({
-    name: "mcp-login",
+  pi.registerCommand("mcp-login", {
     description: "Login to the PyxCloud Passobuild MCP (OAuth 2.1 + PKCE)",
     parameters: Type.Object({
       env: Type.Optional(Type.String({
@@ -444,16 +443,9 @@ export default function (pi: ExtensionAPI) {
           + `&code_challenge_method=S256`
           + `&state=${encodeURIComponent(state)}`;
 
-        // Notify the user
-        ctx.ui.notify(`Auth URL ready — opening browser...`, "info");
-
-        // Try to open the browser; if not possible, show the URL
-        // pi will handle opening the default browser if possible
-        ctx.ui.notify(`Open this URL in your browser:\n${authUrl}`, "info");
-
-        // Wait for the callback server to capture the code
-        // The server is already listening and will resolve when the
-        // browser redirects to localhost:{port}/callback
+        // Notify the user with the auth URL
+        ctx.ui.notify(`MCP login: open browser to authenticate (port ${port})`, "info");
+        console.log(`\n[pyxcloud-mcp] Open this URL in your browser to log in:\n${authUrl}\n`);
 
         // Exchange code for tokens
         const tokenRes = await fetch(`${activeConfig.authIssuer}/protocol/openid-connect/token`, {
@@ -499,8 +491,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── /mcp-status command ────────────────────────────────────────────
 
-  pi.registerCommand({
-    name: "mcp-status",
+  pi.registerCommand("mcp-status", {
     description: "Show MCP connection status",
     parameters: Type.Object({}),
     execute: async (_params, ctx) => {
@@ -511,8 +502,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── /mcp-logout command ────────────────────────────────────────────
 
-  pi.registerCommand({
-    name: "mcp-logout",
+  pi.registerCommand("mcp-logout", {
     description: "Clear MCP authentication and disconnect",
     parameters: Type.Object({}),
     execute: async (_params, ctx) => {
@@ -521,20 +511,4 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── Auto-restore on session start ──────────────────────────────────
-
-  pi.on("session_start", async () => {
-    if (tm.isAuthenticated()) {
-      console.log(`[pyxcloud-mcp] Restored session (${config.env})`);
-      // Try to discover and register tools in the background
-      try {
-        await discoverAndRegisterTools(pi, config, tm);
-      } catch {
-        // Token might be expired; user can run /mcp-login
-        registerGenericMcpTool(pi, config, tm);
-      }
-    } else {
-      console.log("[pyxcloud-mcp] No stored token — run /mcp-login");
-    }
-  });
 }
